@@ -56,7 +56,7 @@ struct headers {
 *********************** P A R S E R  ***********************************
 *************************************************************************/
 
-// TODO: Update the parser to parse the myTunnel header as well
+// Update the parser to parse the myTunnel header as well
 parser MyParser(packet_in packet,
                 out headers hdr,
                 inout metadata meta,
@@ -69,8 +69,17 @@ parser MyParser(packet_in packet,
     state parse_ethernet {
         packet.extract(hdr.ethernet);
         transition select(hdr.ethernet.etherType) {
-            TYPE_IPV4 : parse_ipv4;
-            default : accept;
+            TYPE_MYTUNNEL: parse_myTunnel;
+            TYPE_IPV4: parse_ipv4;
+            default: accept;
+        }
+    }
+
+    state parse_myTunnel {
+        packet.extract(hdr.myTunnel);
+        transition select(hdr.myTunnel.proto_id) {
+            TYPE_IPV4: parse_ipv4;
+            default: accept;
         }
     }
 
@@ -122,17 +131,37 @@ control MyIngress(inout headers hdr,
         default_action = drop();
     }
 
-    // TODO: declare a new action: myTunnel_forward(egressSpec_t port)
+    // Declare a new action: myTunnel_forward(egressSpec_t port)
+    action myTunnel_forward(egressSpec_t port) {
+        standard_metadata.egress_spec = port;
+    }
 
+    // Declare a new table: myTunnel_exact
 
-    // TODO: declare a new table: myTunnel_exact
+    table myTunnel_exact {
+        key = {
+            hdr.myTunnel.dst_id: exact;
+        }
+        actions = {
+            myTunnel_forward;
+            drop;
+            //NoAction;
+        }
+        size = 1024;
+        default_action = drop();
+
+    }
     // TODO: also remember to add table entries!
 
 
     apply {
-        // TODO: Update control flow
+        // Update control flow 
         if (hdr.ipv4.isValid()) {
             ipv4_lpm.apply();
+        }
+        // should be else if
+        if (hdr.myTunnel.isValid()) {
+            myTunnel_exact.apply();
         }
     }
 }
@@ -178,7 +207,8 @@ control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
 control MyDeparser(packet_out packet, in headers hdr) {
     apply {
         packet.emit(hdr.ethernet);
-        // TODO: emit myTunnel header as well
+        // Emit myTunnel header as well
+        packet.emit(hdr.myTunnel);
         packet.emit(hdr.ipv4);
     }
 }
